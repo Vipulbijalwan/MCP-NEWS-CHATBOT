@@ -24,7 +24,7 @@ def get_client():
     return MultiServerMCPClient({
         "NewsAgent": {
             "transport": "streamable_http",
-            "url": "https://coastal-salmon-parrotfish.fastmcp.app/mcp"
+            "url": "https://coastal-salmon-parrotfish.fastmcp.app"
         }
     })
 
