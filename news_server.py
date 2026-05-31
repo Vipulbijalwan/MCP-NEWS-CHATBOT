@@ -34,6 +34,3 @@ def get_news(topic: str, count: int = 10):
 def ping():
     return {"status": "ok"}
 
-
-if __name__ == "__main__":
-    mcp.run()   # ✅ IMPORTANT FIX
