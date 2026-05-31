@@ -1,12 +1,14 @@
+from fastmcp import FastMCP
 import feedparser
 from urllib.parse import quote_plus
-from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("NewsAgent")
 
 
 @mcp.tool()
 def get_news(topic: str, count: int = 10):
+    """Fetch latest Google News RSS"""
+
     topic = (topic or "").strip()
     if not topic:
         return []
@@ -34,3 +36,7 @@ def get_news(topic: str, count: int = 10):
 def ping():
     return {"status": "ok"}
 
+
+if __name__ == "__main__":
+    # IMPORTANT: cloud MCP handles server lifecycle
+    mcp.run()
