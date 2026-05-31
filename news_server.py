@@ -2,7 +2,7 @@ from fastmcp import FastMCP
 import feedparser
 from urllib.parse import quote_plus
 
-mcp = FastMCP("NewsAgent")
+mcp = FastMCP("NewsAgent",auth=None)  # No auth for simplicity, not recommended for production
 
 
 @mcp.tool()
