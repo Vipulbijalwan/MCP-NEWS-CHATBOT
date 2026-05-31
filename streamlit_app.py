@@ -18,9 +18,9 @@ if "news_results"   not in st.session_state: st.session_state.news_results   = {
 def get_client():
     return MultiServerMCPClient({
         "NewsAgent": {
-            "transport": "stdio",
-            "command": "python",
-            "args": ["news_server.py"]
+            "transport": "http",
+            "command": "uv",
+            "args": ["https://coastal-salmon-parrotfish.fastmcp.app/mcp"]
         }
     })
 client = get_client()
