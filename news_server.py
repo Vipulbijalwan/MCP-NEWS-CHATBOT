@@ -4,6 +4,7 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("NewsAgent")
 
+
 @mcp.tool()
 def get_news(topic: str, count: int = 10):
     topic = (topic or "").strip()
@@ -35,6 +36,4 @@ def ping():
 
 
 if __name__ == "__main__":
-    mcp.run(
-        transport="streamable-http"
-    )
+    mcp.run()   # ✅ IMPORTANT FIX
