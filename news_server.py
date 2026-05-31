@@ -4,61 +4,37 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("NewsAgent")
 
-
 @mcp.tool()
 def get_news(topic: str, count: int = 10):
-    """Fetch latest Google News RSS safely"""
+    topic = (topic or "").strip()
+    if not topic:
+        return []
 
-    try:
-        # ---------------- SAFE INPUT ----------------
-        topic = (topic or "").strip()
-        if not topic:
-            return []
+    count = max(1, min(count, 20))
 
-        count = max(1, min(count, 20))  # safety limit
+    url = (
+        "https://news.google.com/rss/search"
+        f"?q={quote_plus(topic)}&hl=en&gl=US&ceid=US:en"
+    )
 
-        query = quote_plus(topic)
+    feed = feedparser.parse(url)
 
-        url = (
-            "https://news.google.com/rss/search"
-            f"?q={query}&hl=en&gl=US&ceid=US:en"
-        )
-
-        feed = feedparser.parse(url)
-
-        if not hasattr(feed, "entries") or not feed.entries:
-            return []
-
-        results = []
-
-        for entry in feed.entries[:count]:
-            results.append({
-                "title": getattr(entry, "title", "No title"),
-                "link": getattr(entry, "link", ""),
-                "published": getattr(entry, "published", "N/A")
-            })
-
-        return results
-
-    except Exception as e:
-        # NEVER crash MCP server
-        return [{
-            "title": "Error fetching news",
-            "link": "",
-            "published": str(e)
-        }]
+    return [
+        {
+            "title": e.get("title", "No title"),
+            "link": e.get("link", ""),
+            "published": e.get("published", "N/A"),
+        }
+        for e in feed.entries[:count]
+    ]
 
 
 @mcp.tool()
 def ping():
-    return {
-        "status": "ok",
-        "message": "News MCP running"
-    }
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":
-   if __name__ == "__main__":
     mcp.run(
         transport="streamable-http",
         host="0.0.0.0",
