@@ -1,0 +1,5 @@
+streamlit
+langchain-mcp-adapters
+feedparser
+scholarly
+mcp
