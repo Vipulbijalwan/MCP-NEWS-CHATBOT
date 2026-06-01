@@ -1,23 +1,22 @@
 import asyncio
 import json
 import traceback
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import streamlit as st
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 st.set_page_config(page_title="News Dashboard", page_icon="📰", layout="wide")
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-PYTHON_EXE    = r"C:\Users\user\Desktop\MCP-NEWS-CHATBOT\.venv\Scripts\python.exe"
-SERVER_SCRIPT = r"C:\Users\user\Desktop\MCP-NEWS-CHATBOT\news_server.py"
+# ── MCP Server URL ─────────────────────────────────────────────────────────────
+MCP_SERVER_URL = "https://coastal-salmon-parrotfish.fastmcp.app/mcp"
 
-DEFAULT_TOPICS = ["AI world", "Stock market"]
+DEFAULT_TOPICS = ["AI world", "Stock market", "LinkedIn", "Politics", "World news"]
 
-# ── Session state defaults ─────────────────────────────────────────────────────
 st.session_state.setdefault("topics", DEFAULT_TOPICS.copy())
 st.session_state.setdefault("selected_topic", DEFAULT_TOPICS[0])
 st.session_state.setdefault("news_results", {})
-st.session_state.setdefault("debug_raw", None)
 
 
 # ── Async helper ───────────────────────────────────────────────────────────────
@@ -25,20 +24,18 @@ def run_async(coro):
     return asyncio.run(coro)
 
 
-# ── MCP call ──────────────────────────────────────────────────────────────────
+# ── MCP call via HTTP ──────────────────────────────────────────────────────────
 async def call_tool(topic: str):
-    client_config = {
+    client = MultiServerMCPClient({
         "NewsAgent": {
-            "transport": "stdio",
-            "command": PYTHON_EXE,
-            "args": [SERVER_SCRIPT],
+            "transport": "streamable_http",
+            "url": MCP_SERVER_URL,
         }
-    }
-    client = MultiServerMCPClient(client_config)
-    tools  = await client.get_tools()
-    tool   = next((t for t in tools if t.name == "get_news"), None)
+    })
+    tools = await client.get_tools()
+    tool  = next((t for t in tools if t.name == "get_news"), None)
     if tool is None:
-        raise RuntimeError("get_news tool not found on the MCP server")
+        raise RuntimeError(f"get_news tool not found. Available: {[t.name for t in tools]}")
     return await tool.ainvoke({"topic": topic, "count": 10})
 
 
@@ -46,26 +43,14 @@ def fetch_news(topic: str):
     return run_async(call_tool(topic))
 
 
-# ── Parser ─────────────────────────────────────────────────────────────────────
+# ── Parser ────────────────────────────────────────────────────────────────────
 def extract_news(raw) -> list:
-    """
-    Unwrap whatever langchain-mcp-adapters returns into a plain list of news dicts.
-
-    FastMCP (list return) → MCP wraps each item as a content block:
-        [{'type': 'text', 'text': '{"title":...}'},
-         {'type': 'text', 'text': '{"title":...}'}, ...]
-
-    FastMCP (json.dumps str return) → single content block with full JSON:
-        [{'type': 'text', 'text': '[{"title":...}, ...]'}]
-    """
     if not raw:
         return []
 
-    # Unwrap LangChain ToolMessage
     if hasattr(raw, "content"):
         raw = raw.content
 
-    # At this point raw should be a list of MCP content blocks
     if not isinstance(raw, list):
         return []
 
@@ -82,15 +67,26 @@ def extract_news(raw) -> list:
             continue
 
         if isinstance(parsed, list):
-            # Single block contains the full JSON array (old json.dumps path)
             for item in parsed:
                 if isinstance(item, dict) and "title" in item:
                     results.append(item)
         elif isinstance(parsed, dict) and "title" in parsed:
-            # Each block is one news item (native list return path)
             results.append(parsed)
 
     return results
+
+
+def relative_time(published_str: str) -> str:
+    try:
+        dt   = parsedate_to_datetime(published_str).astimezone(timezone.utc)
+        diff = datetime.now(timezone.utc) - dt
+        hrs  = int(diff.total_seconds() // 3600)
+        mins = int((diff.total_seconds() % 3600) // 60)
+        if hrs == 0:
+            return f"{mins}m ago"
+        return f"{hrs}h {mins}m ago"
+    except Exception:
+        return published_str
 
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
@@ -107,7 +103,7 @@ def cb_delete(t: str):
 
 
 def cb_add():
-    val: str = st.session_state.get("new_topic_input", "").strip()
+    val = st.session_state.get("new_topic_input", "").strip()
     if val and val not in st.session_state.topics:
         st.session_state.topics.append(val)
         st.session_state.selected_topic = val
@@ -117,22 +113,19 @@ def cb_add():
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("📰 News Dashboard")
-
     st.text_input("Add topic", key="new_topic_input", placeholder="e.g. Climate change")
     st.button("＋ Add", on_click=cb_add)
-
     st.divider()
 
     for t in list(st.session_state.topics):
         col1, col2 = st.columns([5, 1])
-        is_selected = t == st.session_state.selected_topic
         with col1:
             st.button(
                 t,
                 key=f"sel__{t}",
                 on_click=cb_select,
                 args=(t,),
-                type="primary" if is_selected else "secondary",
+                type="primary" if t == st.session_state.selected_topic else "secondary",
                 use_container_width=True,
             )
         with col2:
@@ -148,35 +141,24 @@ if not topic:
 
 st.title(f"📡 {topic}")
 
-col_fetch, col_debug = st.columns([3, 1])
-
-with col_fetch:
-    fetch_clicked = st.button("🔍 Fetch News", type="primary")
-
-
-
-if fetch_clicked:
+if st.button("🔍 Fetch News", type="primary"):
     try:
-        with st.spinner(f"Fetching news for **{topic}** …"):
+        with st.spinner(f"Fetching last 24h news for **{topic}** …"):
             raw  = fetch_news(topic)
-            st.session_state.debug_raw = raw          # save for debug panel
             news = extract_news(raw)
             st.session_state.news_results[topic] = news
         st.rerun()
-
     except Exception:
         st.error("Fetch failed — see traceback below.")
         st.code(traceback.format_exc())
-
-
 
 # ── Display ───────────────────────────────────────────────────────────────────
 news_list: list = st.session_state.news_results.get(topic, [])
 
 if not news_list:
-    st.info("No news yet. Click **🔍 Fetch News** to load stories.")
+    st.info("No news in the last 24 hours. Click **🔍 Fetch News** to load stories.")
 else:
-    st.caption(f"{len(news_list)} stories fetched")
+    st.caption(f"{len(news_list)} stories from the last 24 hours")
 
     for i, item in enumerate(news_list, 1):
         with st.container(border=True):
@@ -187,22 +169,7 @@ else:
                 st.markdown(f"### {item.get('title', 'No title')}")
                 published = item.get("published", "")
                 if published:
-                    try:
-                        from email.utils import parsedate_to_datetime
-                        from datetime import datetime, timezone
-                        dt = parsedate_to_datetime(published).astimezone(timezone.utc)
-                        diff = datetime.now(timezone.utc) - dt
-                        hrs = int(diff.total_seconds() // 3600)
-                        mins = int((diff.total_seconds() % 3600) // 60)
-                        if hrs == 0:
-                            age = f"{mins}m ago"
-                        elif hrs < 24:
-                            age = f"{hrs}h {mins}m ago"
-                        else:
-                            age = published
-                        st.caption(f"🕐 {age}")
-                    except Exception:
-                        st.caption(published)
+                    st.caption(f"🕐 {relative_time(published)}")
                 link = item.get("link", "")
                 if link:
                     st.link_button("Read article →", link)
